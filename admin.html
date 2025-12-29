@@ -1,270 +1,242 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="UTF-8" />
   <title>in5KM Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
-    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-    .card { border: 1px solid #ddd; border-radius: 10px; padding: 16px; margin: 14px 0; }
-    .muted { color: #666; font-size: 13px; }
-    label { font-weight: 600; }
-    input { padding: 8px 10px; border: 1px solid #ccc; border-radius: 8px; min-width: 240px; }
-    button { padding: 9px 12px; border: 1px solid #ccc; border-radius: 10px; cursor: pointer; background: #fff; }
-    button.primary { background: #0b57d0; color: white; border-color: #0b57d0; }
-    button.danger { background: #b3261e; color: white; border-color: #b3261e; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-    pre { background: #0b1020; color: #e7eefc; padding: 12px; border-radius: 10px; overflow: auto; }
-    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid #ccc; font-size: 12px; }
-    .ok { border-color: #1b5e20; color: #1b5e20; }
-    .bad { border-color: #b3261e; color: #b3261e; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto;
+      margin: 32px;
+      background: #fafafa;
+    }
+    h1 { margin-bottom: 4px; }
+    h2 { margin-top: 32px; }
+    .card {
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      margin-top: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.05);
+    }
+    button {
+      padding: 8px 14px;
+      margin-right: 8px;
+      cursor: pointer;
+    }
+    button.danger {
+      background: #d9534f;
+      color: white;
+      border: none;
+      border-radius: 4px;
+    }
+    button.secondary {
+      background: #eee;
+      border: none;
+      border-radius: 4px;
+    }
+    input {
+      padding: 6px;
+      margin-right: 6px;
+      min-width: 120px;
+    }
+    .warn {
+      color: #b00;
+      font-weight: 600;
+    }
+    pre {
+      background: #0b1020;
+      color: #e6edf3;
+      padding: 12px;
+      border-radius: 6px;
+      max-height: 300px;
+      overflow: auto;
+      font-size: 13px;
+    }
   </style>
 </head>
-
 <body>
-  <h1>in5KM Admin</h1>
-  <p class="muted">
-    This page is public if hosted on GitHub Pages. Security must be enforced by Firebase Auth + Cloud Functions + custom claims.
-  </p>
 
-  <div class="card">
-    <h2>Auth</h2>
-    <div class="row">
-      <button id="btnLogin" class="primary">Login with GitHub</button>
-      <button id="btnLogout">Logout</button>
-      <span id="authState" class="pill">Signed out</span>
-    </div>
-    <div id="userInfo" class="muted" style="margin-top:10px;"></div>
-  </div>
+<h1>in5KM Admin</h1>
+<p class="warn">
+  This page is public on GitHub Pages.  
+  Security must be enforced via Firebase Auth + DB Rules (v2 will improve this).
+</p>
 
-  <div class="card">
-    <h2>Cleanup old posts</h2>
-    <p class="muted">Delete posts older than N days (and remove their copies under user-posts / query / query-visit).</p>
+<div class="card">
+  <h2>Auth</h2>
+  <button onclick="loginWithGithub()">Login with GitHub</button>
+  <button onclick="logout()" class="secondary">Logout</button>
+  <span id="authStatus">Signed out</span>
+</div>
 
-    <div class="row">
-      <label for="days">Older than (days)</label>
-      <input id="days" type="number" min="1" value="100" />
-      <button id="btnDryRunCleanup">Dry-run</button>
-      <button id="btnRunCleanup" class="danger">Execute delete</button>
-    </div>
+<div class="card">
+  <h2>Cleanup old posts</h2>
+  <p>Delete posts older than N days (and their copies under user-posts / query / query-visit).</p>
 
-    <div class="row" style="margin-top:10px;">
-      <input id="confirmCleanup" placeholder='Type "DELETE" to enable Execute' />
-      <span class="muted">Safety check</span>
-    </div>
-  </div>
+  Older than (days):
+  <input id="daysInput" type="number" value="100" />
 
-  <div class="card">
-    <h2>Delete user and all posts</h2>
-    <p class="muted">Deletes user profile, refs, user-posts, and all posts owned by this UID (plus query indexes).</p>
+  <br /><br />
+  <input id="confirmDeletePosts" placeholder='Type "DELETE"' />
+  <button class="secondary" onclick="dryRunCleanup()">Dry-run</button>
+  <button class="danger" onclick="cleanupOldPosts()">Execute delete</button>
+</div>
 
-    <div class="row">
-      <label for="uid">User UID</label>
-      <input id="uid" placeholder="Paste Firebase Auth UID here" />
-      <button id="btnDryRunUser">Dry-run</button>
-      <button id="btnRunUser" class="danger">Execute delete</button>
-    </div>
+<div class="card">
+  <h2>Delete user and all posts</h2>
+  <p>Deletes user profile, refs, user-posts, and all posts owned by this UID.</p>
 
-    <div class="row" style="margin-top:10px;">
-      <input id="confirmUser" placeholder='Type "DELETE USER" to enable Execute' />
-      <span class="muted">Safety check</span>
-    </div>
-  </div>
+  User UID:
+  <input id="uidInput" style="min-width:300px" placeholder="Paste Firebase Auth UID" />
 
-  <div class="card">
-    <h2>Logs</h2>
-    <pre id="log"></pre>
-  </div>
+  <br /><br />
+  <input id="confirmDeleteUser" placeholder='Type "DELETE USER"' />
+  <button class="secondary" onclick="dryRunDeleteUser()">Dry-run</button>
+  <button class="danger" onclick="deleteUser()">Execute delete</button>
+</div>
 
-  <!-- Firebase v9 modular SDK (CDN) -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-    import {
-      getAuth,
-      onAuthStateChanged,
-      signInWithPopup,
-      GithubAuthProvider,
-      signOut
-    } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
+<div class="card">
+  <h2>Logs</h2>
+  <pre id="log"></pre>
+</div>
 
-    import {
-      getFunctions,
-      httpsCallable
-    } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-functions.js";
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import {
+    getAuth,
+    GithubAuthProvider,
+    signInWithPopup,
+    signOut,
+    onAuthStateChanged
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+  import {
+    getDatabase,
+    ref,
+    get,
+    remove
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-    // 1) TODO: Replace with your Firebase web app config
-    // Firebase Console -> Project settings -> General -> Your apps -> Web app
-    const firebaseConfig = {
-      apiKey: "REPLACE_ME",
-      authDomain: "REPLACE_ME",
-      projectId: "REPLACE_ME",
-      appId: "REPLACE_ME",
-      // Optional:
-      // databaseURL: "https://xxxxx.asia-southeast1.firebasedatabase.app"
-    };
+  /* ================= Firebase Config (WEB APP) ================= */
+  const firebaseConfig = {
+    apiKey: "AIzaSyBLW0BTiZAsWwEHL_-miGSE-DgQNvUqA",
+    authDomain: "ready5km.firebaseapp.com",
+    databaseURL: "https://ready5km-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "ready5km",
+    storageBucket: "ready5km.appspot.com",
+    messagingSenderId: "148288973474",
+    appId: "1:148288973474:web:9ff9d7ab9498c976185fb"
+  };
 
-    // 2) If your functions are in a specific region, set it here
-    // e.g. const FUNCTIONS_REGION = "asia-southeast1";
-    const FUNCTIONS_REGION = "us-central1";
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getDatabase(app);
 
-    // ---------- UI helpers ----------
-    const el = (id) => document.getElementById(id);
-    const logEl = el("log");
+  const logEl = document.getElementById("log");
+  const authStatus = document.getElementById("authStatus");
 
-    function log(obj, title = "") {
-      const ts = new Date().toISOString();
-      const payload = (typeof obj === "string") ? obj : JSON.stringify(obj, null, 2);
-      logEl.textContent = `${ts} ${title}\n${payload}\n\n` + logEl.textContent;
+  function log(msg, obj) {
+    logEl.textContent += `[${new Date().toISOString()}] ${msg}\n`;
+    if (obj) logEl.textContent += JSON.stringify(obj, null, 2) + "\n";
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  /* ================= Auth ================= */
+  window.loginWithGithub = async () => {
+    try {
+      const provider = new GithubAuthProvider();
+      await signInWithPopup(auth, provider);
+      log("Login success");
+    } catch (e) {
+      log("Login failed", e);
     }
+  };
 
-    function setAuthPill(signedIn, isAdmin) {
-      const pill = el("authState");
-      if (!signedIn) {
-        pill.textContent = "Signed out";
-        pill.className = "pill";
-      } else if (isAdmin) {
-        pill.textContent = "Signed in (admin)";
-        pill.className = "pill ok";
-      } else {
-        pill.textContent = "Signed in (not admin)";
-        pill.className = "pill bad";
-      }
-    }
+  window.logout = async () => {
+    await signOut(auth);
+    log("Logged out");
+  };
 
-    function setButtonsEnabled(enabled) {
-      // dry-run buttons can be enabled if signed in; execute requires confirm + admin
-      el("btnLogin").disabled = enabled;
-      el("btnLogout").disabled = !enabled;
-    }
+  onAuthStateChanged(auth, (user) => {
+    authStatus.textContent = user
+      ? `Signed in: ${user.uid}`
+      : "Signed out";
+  });
 
-    // ---------- Firebase init ----------
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const functions = getFunctions(app, FUNCTIONS_REGION);
+  /* ================= Helpers ================= */
+  const nowSec = () => Math.floor(Date.now() / 1000);
 
-    // Callable functions (must exist in your Cloud Functions backend)
-    const fnCleanupOldPosts = httpsCallable(functions, "cleanupOldPosts");
-    const fnDeleteUserAndPosts = httpsCallable(functions, "deleteUserAndPosts");
+  /* ================= Cleanup old posts ================= */
+  window.dryRunCleanup = async () => {
+    const days = Number(daysInput.value);
+    const cutoff = nowSec() - days * 86400;
 
-    // ---------- Auth ----------
-    const provider = new GithubAuthProvider();
-    provider.addScope("read:user"); // optional
+    const snap = await get(ref(db, "posts"));
+    let count = 0;
 
-    el("btnLogin").onclick = async () => {
-      try {
-        await signInWithPopup(auth, provider);
-      } catch (e) {
-        log({ error: e?.message || String(e) }, "Login failed");
-      }
-    };
-
-    el("btnLogout").onclick = async () => {
-      try {
-        await signOut(auth);
-      } catch (e) {
-        log({ error: e?.message || String(e) }, "Logout failed");
-      }
-    };
-
-    let currentIsAdmin = false;
-
-    onAuthStateChanged(auth, async (user) => {
-      currentIsAdmin = false;
-
-      if (!user) {
-        setAuthPill(false, false);
-        setButtonsEnabled(false);
-        el("userInfo").textContent = "";
-        updateExecuteButtons();
-        return;
-      }
-
-      // read custom claims
-      const token = await user.getIdTokenResult(true);
-      currentIsAdmin = !!token?.claims?.admin;
-
-      setAuthPill(true, currentIsAdmin);
-      setButtonsEnabled(true);
-
-      el("userInfo").innerHTML = `
-        <div><b>UID:</b> ${user.uid}</div>
-        <div><b>Email:</b> ${user.email || "(none)"} </div>
-        <div><b>Provider:</b> ${user.providerData?.[0]?.providerId || "(unknown)"} </div>
-        <div><b>Admin claim:</b> ${currentIsAdmin ? "true" : "false"}</div>
-      `;
-
-      updateExecuteButtons();
-      log({ uid: user.uid, admin: currentIsAdmin, claims: token.claims }, "Auth state changed");
+    snap.forEach(c => {
+      if (c.val().start < cutoff) count++;
     });
 
-    // ---------- Safety checks ----------
-    function updateExecuteButtons() {
-      const cleanupOk = el("confirmCleanup").value.trim().toUpperCase() === "DELETE";
-      const userOk = el("confirmUser").value.trim().toUpperCase() === "DELETE USER";
+    log(`Dry-run: ${count} posts older than ${days} days`);
+  };
 
-      // Execute requires: signed in + admin + confirm phrase
-      const signedIn = !!auth.currentUser;
-      el("btnRunCleanup").disabled = !(signedIn && currentIsAdmin && cleanupOk);
-      el("btnRunUser").disabled = !(signedIn && currentIsAdmin && userOk);
-
-      // Dry-run requires signed in (admin recommended but not strictly required)
-      el("btnDryRunCleanup").disabled = !signedIn;
-      el("btnDryRunUser").disabled = !signedIn;
+  window.cleanupOldPosts = async () => {
+    if (confirmDeletePosts.value !== "DELETE") {
+      alert('Type "DELETE" to confirm');
+      return;
     }
 
-    el("confirmCleanup").addEventListener("input", updateExecuteButtons);
-    el("confirmUser").addEventListener("input", updateExecuteButtons);
+    const days = Number(daysInput.value);
+    const cutoff = nowSec() - days * 86400;
 
-    // ---------- Actions ----------
-    el("btnDryRunCleanup").onclick = async () => {
-      try {
-        const days = Number(el("days").value || 100);
-        log({ days, dryRun: true }, "Calling cleanupOldPosts (dry-run)");
-        const res = await fnCleanupOldPosts({ days, dryRun: true });
-        log(res.data, "Result");
-      } catch (e) {
-        log({ error: e?.message || String(e) }, "cleanupOldPosts dry-run failed");
+    const snap = await get(ref(db, "posts"));
+    let deleted = 0;
+
+    for (const child of Object.entries(snap.val() || {})) {
+      const [postId, post] = child;
+      if (post.start < cutoff) {
+        await remove(ref(db, `posts/${postId}`));
+        deleted++;
       }
-    };
+    }
 
-    el("btnRunCleanup").onclick = async () => {
-      try {
-        const days = Number(el("days").value || 100);
-        log({ days, dryRun: false }, "Calling cleanupOldPosts (EXECUTE)");
-        const res = await fnCleanupOldPosts({ days, dryRun: false });
-        log(res.data, "Result");
-      } catch (e) {
-        log({ error: e?.message || String(e) }, "cleanupOldPosts execute failed");
-      }
-    };
+    log(`Deleted ${deleted} old posts`);
+  };
 
-    el("btnDryRunUser").onclick = async () => {
-      try {
-        const uid = el("uid").value.trim();
-        if (!uid) return log("Please input UID.", "Validation");
-        log({ uid, dryRun: true }, "Calling deleteUserAndPosts (dry-run)");
-        const res = await fnDeleteUserAndPosts({ uid, dryRun: true });
-        log(res.data, "Result");
-      } catch (e) {
-        log({ error: e?.message || String(e) }, "deleteUserAndPosts dry-run failed");
-      }
-    };
+  /* ================= Delete user ================= */
+  window.dryRunDeleteUser = async () => {
+    const uid = uidInput.value.trim();
+    if (!uid) return alert("UID required");
 
-    el("btnRunUser").onclick = async () => {
-      try {
-        const uid = el("uid").value.trim();
-        if (!uid) return log("Please input UID.", "Validation");
-        log({ uid, dryRun: false }, "Calling deleteUserAndPosts (EXECUTE)");
-        const res = await fnDeleteUserAndPosts({ uid, dryRun: false });
-        log(res.data, "Result");
-      } catch (e) {
-        log({ error: e?.message || String(e) }, "deleteUserAndPosts execute failed");
-      }
-    };
+    const snap = await get(ref(db, "user-posts"));
+    let count = 0;
 
-    updateExecuteButtons();
-    log("Admin page loaded.", "Init");
-  </script>
+    snap.forEach(u => {
+      if (u.key === uid) count += u.size;
+    });
+
+    log(`Dry-run: user ${uid} has ${count} posts`);
+  };
+
+  window.deleteUser = async () => {
+    if (confirmDeleteUser.value !== "DELETE USER") {
+      alert('Type "DELETE USER" to confirm');
+      return;
+    }
+
+    const uid = uidInput.value.trim();
+    if (!uid) return alert("UID required");
+
+    await remove(ref(db, `users/${uid}`));
+    await remove(ref(db, `user-posts/${uid}`));
+    await remove(ref(db, `user-refs/${uid}`));
+
+    log(`Deleted user ${uid} and related data`);
+  };
+
+  log("Admin page loaded");
+</script>
+
 </body>
 </html>
