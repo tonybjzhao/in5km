@@ -22,6 +22,7 @@
     button {
       padding: 8px 14px;
       margin-right: 8px;
+      margin-bottom: 8px;
       cursor: pointer;
     }
     button.danger {
@@ -30,8 +31,20 @@
       border: none;
       border-radius: 4px;
     }
+    button.warning {
+      background: #f0ad4e;
+      color: white;
+      border: none;
+      border-radius: 4px;
+    }
     button.secondary {
       background: #eee;
+      border: none;
+      border-radius: 4px;
+    }
+    button.primary {
+      background: #5bc0de;
+      color: white;
       border: none;
       border-radius: 4px;
     }
@@ -44,14 +57,47 @@
       color: #b00;
       font-weight: 600;
     }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .stat-box {
+      background: #f9f9f9;
+      padding: 12px;
+      border-radius: 6px;
+      border-left: 4px solid #5bc0de;
+    }
+    .stat-box.ended {
+      border-left-color: #f0ad4e;
+    }
+    .stat-box.archived {
+      border-left-color: #d9534f;
+    }
+    .stat-label {
+      font-size: 12px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .stat-value {
+      font-size: 28px;
+      font-weight: 600;
+      margin-top: 4px;
+    }
     pre {
       background: #0b1020;
       color: #e6edf3;
       padding: 12px;
       border-radius: 6px;
-      max-height: 300px;
+      max-height: 400px;
       overflow: auto;
       font-size: 13px;
+    }
+    .section-divider {
+      margin: 24px 0;
+      border-top: 2px solid #e0e0e0;
     }
   </style>
 </head>
@@ -60,31 +106,78 @@
 <h1>in5KM Admin</h1>
 <p class="warn">
   This page is public on GitHub Pages.  
-  Security must be enforced via Firebase Auth + DB Rules (v2 will improve this).
+  Security must be enforced via Firebase Auth + DB Rules.
 </p>
 
 <div class="card">
-  <h2>Auth</h2>
-  <button onclick="loginWithGithub()">Login with GitHub</button>
+  <h2>🔐 Auth</h2>
+  <button onclick="loginWithGoogle()" class="primary">Login with Google</button>
   <button onclick="logout()" class="secondary">Logout</button>
   <span id="authStatus">Signed out</span>
 </div>
 
 <div class="card">
-  <h2>Cleanup old posts</h2>
-  <p>Delete posts older than N days (and their copies under user-posts / query / query-visit).</p>
-
-  Older than (days):
-  <input id="daysInput" type="number" value="100" />
-
-  <br /><br />
-  <input id="confirmDeletePosts" placeholder='Type "DELETE"' />
-  <button class="secondary" onclick="dryRunCleanup()">Dry-run</button>
-  <button class="danger" onclick="cleanupOldPosts()">Execute delete</button>
+  <h2>📊 Database Statistics</h2>
+  <button onclick="loadStats()" class="primary">Refresh Stats</button>
+  <div class="stats" id="statsContainer">
+    <div class="stat-box">
+      <div class="stat-label">Total Posts</div>
+      <div class="stat-value" id="statTotal">-</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Active Posts</div>
+      <div class="stat-value" id="statActive">-</div>
+    </div>
+    <div class="stat-box ended">
+      <div class="stat-label">Ended Posts</div>
+      <div class="stat-value" id="statEnded">-</div>
+    </div>
+    <div class="stat-box archived">
+      <div class="stat-label">Archived Posts</div>
+      <div class="stat-value" id="statArchived">-</div>
+    </div>
+  </div>
 </div>
 
 <div class="card">
-  <h2>Delete user and all posts</h2>
+  <h2>🗄️ Archive Old Posts (Soft Delete)</h2>
+  <p>Mark ended posts as archived. They will be hidden from feed but data is preserved.</p>
+
+  <div style="margin: 16px 0;">
+    <button onclick="previewArchive(7)" class="secondary">Preview > 7 days</button>
+    <button onclick="previewArchive(14)" class="secondary">Preview > 14 days</button>
+    <button onclick="previewArchive(30)" class="secondary">Preview > 30 days</button>
+  </div>
+
+  <div style="margin: 16px 0;">
+    Ended older than (days):
+    <input id="archiveDaysInput" type="number" value="14" style="width: 80px" />
+    <br /><br />
+    <input id="confirmArchive" placeholder='Type "ARCHIVE"' />
+    <button class="warning" onclick="archiveOldPosts()">Archive Posts</button>
+  </div>
+</div>
+
+<div class="section-divider"></div>
+
+<div class="card">
+  <h2>⚠️ Hard Delete Archived Posts</h2>
+  <p class="warn">Permanently deletes posts and related data. Cannot be undone.</p>
+
+  <div style="margin: 16px 0;">
+    Archived older than (days):
+    <input id="deleteDaysInput" type="number" value="30" style="width: 80px" />
+    <br /><br />
+    <input id="confirmDelete" placeholder='Type "DELETE FOREVER"' />
+    <button class="secondary" onclick="previewDelete()">Preview Delete</button>
+    <button class="danger" onclick="hardDeleteArchived()">Hard Delete</button>
+  </div>
+</div>
+
+<div class="section-divider"></div>
+
+<div class="card">
+  <h2>👤 Delete User and All Posts</h2>
   <p>Deletes user profile, refs, user-posts, and all posts owned by this UID.</p>
 
   User UID:
@@ -97,7 +190,8 @@
 </div>
 
 <div class="card">
-  <h2>Logs</h2>
+  <h2>📝 Logs</h2>
+  <button onclick="clearLogs()" class="secondary">Clear Logs</button>
   <pre id="log"></pre>
 </div>
 
@@ -105,7 +199,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
   import {
     getAuth,
-    GithubAuthProvider,
+    GoogleAuthProvider,
     signInWithPopup,
     signOut,
     onAuthStateChanged
@@ -114,6 +208,7 @@
     getDatabase,
     ref,
     get,
+    update,
     remove
   } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
@@ -137,25 +232,31 @@
   const authStatus = document.getElementById("authStatus");
 
   function log(msg, obj) {
-    logEl.textContent += `[${new Date().toISOString()}] ${msg}\n`;
+    const timestamp = new Date().toISOString();
+    logEl.textContent += `[${timestamp}] ${msg}\n`;
     if (obj) logEl.textContent += JSON.stringify(obj, null, 2) + "\n";
     logEl.scrollTop = logEl.scrollHeight;
   }
 
+  window.clearLogs = () => {
+    logEl.textContent = "";
+    log("Logs cleared");
+  };
+
   /* ================= Auth ================= */
-  window.loginWithGithub = async () => {
+  window.loginWithGoogle = async () => {
     try {
-      const provider = new GithubAuthProvider();
+      const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-      log("Login success");
+      log("✅ Login success");
     } catch (e) {
-      log("Login failed", e);
+      log("❌ Login failed", e);
     }
   };
 
   window.logout = async () => {
     await signOut(auth);
-    log("Logged out");
+    log("✅ Logged out");
   };
 
   onAuthStateChanged(auth, (user) => {
@@ -167,42 +268,180 @@
   /* ================= Helpers ================= */
   const nowSec = () => Math.floor(Date.now() / 1000);
 
-  /* ================= Cleanup old posts ================= */
-  window.dryRunCleanup = async () => {
-    const days = Number(daysInput.value);
-    const cutoff = nowSec() - days * 86400;
+  /* ================= Database Statistics ================= */
+  window.loadStats = async () => {
+    try {
+      log("Loading database statistics...");
+      const snap = await get(ref(db, "posts"));
+      const now = nowSec();
+      
+      let total = 0;
+      let active = 0;
+      let ended = 0;
+      let archived = 0;
 
-    const snap = await get(ref(db, "posts"));
-    let count = 0;
+      snap.forEach(child => {
+        const post = child.val();
+        total++;
+        
+        if (post.isArchived) {
+          archived++;
+        } else if (post.endedAt && post.endedAt < now) {
+          ended++;
+        } else {
+          active++;
+        }
+      });
 
-    snap.forEach(c => {
-      if (c.val().start < cutoff) count++;
-    });
+      document.getElementById("statTotal").textContent = total;
+      document.getElementById("statActive").textContent = active;
+      document.getElementById("statEnded").textContent = ended;
+      document.getElementById("statArchived").textContent = archived;
 
-    log(`Dry-run: ${count} posts older than ${days} days`);
+      log(`✅ Stats loaded: ${total} total, ${active} active, ${ended} ended, ${archived} archived`);
+    } catch (e) {
+      log("❌ Failed to load stats", e);
+    }
   };
 
-  window.cleanupOldPosts = async () => {
-    if (confirmDeletePosts.value !== "DELETE") {
-      alert('Type "DELETE" to confirm');
+  /* ================= Archive old posts (Soft Delete) ================= */
+  window.previewArchive = async (days) => {
+    try {
+      const cutoff = nowSec() - (days * 86400);
+      const snap = await get(ref(db, "posts"));
+      const candidates = [];
+
+      snap.forEach(child => {
+        const post = child.val();
+        const postId = child.key;
+        
+        // Only archive if: ended AND not already archived
+        if (post.endedAt && post.endedAt < cutoff && !post.isArchived) {
+          candidates.push({
+            id: postId,
+            title: post.title,
+            endedAt: post.endedAt,
+            daysAgo: Math.floor((nowSec() - post.endedAt) / 86400)
+          });
+        }
+      });
+
+      candidates.sort((a, b) => a.endedAt - b.endedAt);
+
+      log(`📋 Preview: ${candidates.length} posts ended > ${days} days ago`);
+      if (candidates.length > 0) {
+        log("Sample posts (oldest 10):", candidates.slice(0, 10));
+      }
+    } catch (e) {
+      log("❌ Preview failed", e);
+    }
+  };
+
+  window.archiveOldPosts = async () => {
+    if (confirmArchive.value !== "ARCHIVE") {
+      alert('Type "ARCHIVE" to confirm');
       return;
     }
 
-    const days = Number(daysInput.value);
-    const cutoff = nowSec() - days * 86400;
+    try {
+      const days = Number(archiveDaysInput.value);
+      const cutoff = nowSec() - (days * 86400);
+      const now = nowSec();
+      
+      log(`🗄️ Archiving posts ended > ${days} days ago...`);
+      
+      const snap = await get(ref(db, "posts"));
+      let archived = 0;
 
-    const snap = await get(ref(db, "posts"));
-    let deleted = 0;
-
-    for (const child of Object.entries(snap.val() || {})) {
-      const [postId, post] = child;
-      if (post.start < cutoff) {
-        await remove(ref(db, `posts/${postId}`));
-        deleted++;
+      for (const child of snap.children) {
+        const post = child.val();
+        const postId = child.key;
+        
+        // Archive if: ended AND not already archived
+        if (post.endedAt && post.endedAt < cutoff && !post.isArchived) {
+          await update(ref(db, `posts/${postId}`), {
+            isArchived: true,
+            archivedAt: now
+          });
+          archived++;
+        }
       }
+
+      confirmArchive.value = "";
+      log(`✅ Archived ${archived} posts`);
+      loadStats(); // Refresh stats
+    } catch (e) {
+      log("❌ Archive failed", e);
+    }
+  };
+
+  /* ================= Hard Delete Archived Posts ================= */
+  window.previewDelete = async () => {
+    try {
+      const days = Number(deleteDaysInput.value);
+      const cutoff = nowSec() - (days * 86400);
+      const snap = await get(ref(db, "posts"));
+      const candidates = [];
+
+      snap.forEach(child => {
+        const post = child.val();
+        const postId = child.key;
+        
+        // Only delete if: archived AND archivedAt older than cutoff
+        if (post.isArchived && post.archivedAt && post.archivedAt < cutoff) {
+          candidates.push({
+            id: postId,
+            title: post.title,
+            archivedAt: post.archivedAt,
+            daysAgo: Math.floor((nowSec() - post.archivedAt) / 86400)
+          });
+        }
+      });
+
+      candidates.sort((a, b) => a.archivedAt - b.archivedAt);
+
+      log(`⚠️ Preview: ${candidates.length} archived posts > ${days} days old`);
+      if (candidates.length > 0) {
+        log("Will be permanently deleted:", candidates);
+      }
+    } catch (e) {
+      log("❌ Preview failed", e);
+    }
+  };
+
+  window.hardDeleteArchived = async () => {
+    if (confirmDelete.value !== "DELETE FOREVER") {
+      alert('Type "DELETE FOREVER" to confirm permanent deletion');
+      return;
     }
 
-    log(`Deleted ${deleted} old posts`);
+    try {
+      const days = Number(deleteDaysInput.value);
+      const cutoff = nowSec() - (days * 86400);
+      
+      log(`⚠️ Hard deleting archived posts > ${days} days old...`);
+      
+      const snap = await get(ref(db, "posts"));
+      let deleted = 0;
+
+      for (const child of snap.children) {
+        const post = child.val();
+        const postId = child.key;
+        
+        // Delete if: archived AND archivedAt older than cutoff
+        if (post.isArchived && post.archivedAt && post.archivedAt < cutoff) {
+          await remove(ref(db, `posts/${postId}`));
+          // TODO: Also delete from user-posts, comments, etc.
+          deleted++;
+        }
+      }
+
+      confirmDelete.value = "";
+      log(`✅ Permanently deleted ${deleted} archived posts`);
+      loadStats(); // Refresh stats
+    } catch (e) {
+      log("❌ Hard delete failed", e);
+    }
   };
 
   /* ================= Delete user ================= */
@@ -210,14 +449,13 @@
     const uid = uidInput.value.trim();
     if (!uid) return alert("UID required");
 
-    const snap = await get(ref(db, "user-posts"));
-    let count = 0;
-
-    snap.forEach(u => {
-      if (u.key === uid) count += u.size;
-    });
-
-    log(`Dry-run: user ${uid} has ${count} posts`);
+    try {
+      const snap = await get(ref(db, `user-posts/${uid}`));
+      const count = snap.exists() ? Object.keys(snap.val()).length : 0;
+      log(`📋 Dry-run: user ${uid} has ${count} posts`);
+    } catch (e) {
+      log("❌ Dry-run failed", e);
+    }
   };
 
   window.deleteUser = async () => {
@@ -229,14 +467,23 @@
     const uid = uidInput.value.trim();
     if (!uid) return alert("UID required");
 
-    await remove(ref(db, `users/${uid}`));
-    await remove(ref(db, `user-posts/${uid}`));
-    await remove(ref(db, `user-refs/${uid}`));
+    try {
+      log(`⚠️ Deleting user ${uid}...`);
+      
+      await remove(ref(db, `users/${uid}`));
+      await remove(ref(db, `user-posts/${uid}`));
+      await remove(ref(db, `user-refs/${uid}`));
 
-    log(`Deleted user ${uid} and related data`);
+      confirmDeleteUser.value = "";
+      log(`✅ Deleted user ${uid} and related data`);
+    } catch (e) {
+      log("❌ Delete user failed", e);
+    }
   };
 
-  log("Admin page loaded");
+  /* ================= Initialization ================= */
+  log("✅ Admin page loaded");
+  log("💡 Start by clicking 'Refresh Stats' to see database status");
 </script>
 
 </body>
