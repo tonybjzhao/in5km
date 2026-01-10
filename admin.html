@@ -48,7 +48,7 @@
       border: none;
       border-radius: 4px;
     }
-    input {
+    input, select {
       padding: 6px;
       margin-right: 6px;
       min-width: 120px;
@@ -99,6 +99,37 @@
       margin: 24px 0;
       border-top: 2px solid #e0e0e0;
     }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+    }
+    th, td {
+      border-bottom: 1px solid #eee;
+      padding: 8px;
+      text-align: left;
+      font-size: 13px;
+    }
+    th {
+      background: #fafafa;
+      font-weight: 600;
+    }
+    .pill {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 999px;
+      background: #f0f0f0;
+      font-size: 13px;
+      margin-right: 8px;
+      margin-bottom: 8px;
+    }
+    .pill b {
+      color: #0066cc;
+    }
+    label {
+      font-size: 13px;
+      margin-right: 16px;
+    }
   </style>
 </head>
 <body>
@@ -140,28 +171,72 @@
 </div>
 
 <div class="card">
-  <h2>🗄️ Archive Old Posts (Soft Delete)</h2>
-  <p>Mark ended posts as archived. They will be hidden from feed but data is preserved.</p>
+  <h2>🗄️ Smart Cleanup (Soft Delete / Archive)</h2>
+  <p>
+    <strong>EN:</strong> Archive ended posts based on <code>endedAt</code>. Archived posts are hidden from Feed/Map/Visit in the app.<br/>
+    <strong>中文:</strong> 基于 <code>endedAt</code> 对过期帖子做归档。归档后 App 的 Feed/Map/Visit 会自动隐藏这些帖子。
+  </p>
 
   <div style="margin: 16px 0;">
-    <button onclick="previewArchive(7)" class="secondary">Preview > 7 days</button>
-    <button onclick="previewArchive(14)" class="secondary">Preview > 14 days</button>
-    <button onclick="previewArchive(30)" class="secondary">Preview > 30 days</button>
+    <label>Ended older than (days):</label>
+    <select id="archiveDays">
+      <option value="7">7</option>
+      <option value="14" selected>14</option>
+      <option value="30">30</option>
+      <option value="60">60</option>
+    </select>
+
+    <label>Limit:</label>
+    <select id="archiveLimit">
+      <option value="50">50</option>
+      <option value="200" selected>200</option>
+      <option value="500">500</option>
+    </select>
+
+    <label>Mode:</label>
+    <select id="archiveMode">
+      <option value="preview" selected>Preview (no writes)</option>
+      <option value="archive">Archive (soft delete)</option>
+    </select>
   </div>
 
   <div style="margin: 16px 0;">
-    Ended older than (days):
-    <input id="archiveDaysInput" type="number" value="14" style="width: 80px" />
-    <br /><br />
-    <input id="confirmArchive" placeholder='Type "ARCHIVE"' />
-    <button class="warning" onclick="archiveOldPosts()">Archive Posts</button>
+    <label><input type="checkbox" id="onlyNotArchived" checked /> Only not archived</label>
+    <label><input type="checkbox" id="requireEndedAt" checked /> Require endedAt field</label>
+  </div>
+
+  <div style="margin: 16px 0;">
+    <button class="primary" onclick="runCleanup()">Run Cleanup</button>
+    <button class="secondary" onclick="stopCleanup()">Stop</button>
+  </div>
+
+  <div id="cleanupStats" style="margin: 16px 0;">
+    <span class="pill">Scanned: <b id="cleanupScanned">0</b></span>
+    <span class="pill">Matched: <b id="cleanupMatched">0</b></span>
+    <span class="pill">Archived: <b id="cleanupArchived">0</b></span>
+    <span class="pill">Errors: <b id="cleanupErrors">0</b></span>
+  </div>
+
+  <div style="max-height: 300px; overflow: auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Post ID</th>
+          <th>endedAt</th>
+          <th>isArchived</th>
+          <th>Type</th>
+          <th>Title</th>
+        </tr>
+      </thead>
+      <tbody id="cleanupResults"></tbody>
+    </table>
   </div>
 </div>
 
 <div class="section-divider"></div>
 
 <div class="card">
-  <h2>⚠️ Hard Delete Archived Posts</h2>
+  <h2>⚠️ Hard Delete Archived Posts (Danger Zone)</h2>
   <p class="warn">Permanently deletes posts and related data. Cannot be undone.</p>
 
   <div style="margin: 16px 0;">
@@ -209,10 +284,14 @@
     ref,
     get,
     update,
-    remove
+    remove,
+    query,
+    orderByChild,
+    endAt,
+    limitToFirst
   } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-  /* ================= Firebase Config (WEB APP) ================= */
+  /* ================= Firebase Config ================= */
   const firebaseConfig = {
     apiKey: "AIzaSyBLWO8TizA5wWEeHl_-miGSE-DgqNvIuQA",
     authDomain: "ready5km.firebaseapp.com",
@@ -230,6 +309,8 @@
 
   const logEl = document.getElementById("log");
   const authStatus = document.getElementById("authStatus");
+
+  let stopFlag = false;
 
   function log(msg, obj) {
     const timestamp = new Date().toISOString();
@@ -304,76 +385,121 @@
     }
   };
 
-  /* ================= Archive old posts (Soft Delete) ================= */
-  window.previewArchive = async (days) => {
-    try {
-      const cutoff = nowSec() - (days * 86400);
-      const snap = await get(ref(db, "posts"));
-      const candidates = [];
-
-      snap.forEach(child => {
-        const post = child.val();
-        const postId = child.key;
-        
-        // Only archive if: ended AND not already archived
-        if (post.endedAt && post.endedAt < cutoff && !post.isArchived) {
-          candidates.push({
-            id: postId,
-            title: post.title,
-            endedAt: post.endedAt,
-            daysAgo: Math.floor((nowSec() - post.endedAt) / 86400)
-          });
-        }
-      });
-
-      candidates.sort((a, b) => a.endedAt - b.endedAt);
-
-      log(`📋 Preview: ${candidates.length} posts ended > ${days} days ago`);
-      if (candidates.length > 0) {
-        log("Sample posts (oldest 10):", candidates.slice(0, 10));
-      }
-    } catch (e) {
-      log("❌ Preview failed", e);
-    }
+  /* ================= Smart Cleanup (NEW) ================= */
+  window.stopCleanup = () => {
+    stopFlag = true;
+    log("⏸️ Stop requested");
   };
 
-  window.archiveOldPosts = async () => {
-    if (confirmArchive.value !== "ARCHIVE") {
-      alert('Type "ARCHIVE" to confirm');
+  window.runCleanup = async () => {
+    stopFlag = false;
+
+    if (!auth.currentUser) {
+      alert("Please sign in first");
       return;
     }
 
-    try {
-      const days = Number(archiveDaysInput.value);
-      const cutoff = nowSec() - (days * 86400);
-      const now = nowSec();
-      
-      log(`🗄️ Archiving posts ended > ${days} days ago...`);
-      
-      const snap = await get(ref(db, "posts"));
-      let archived = 0;
+    // Reset UI
+    document.getElementById("cleanupResults").innerHTML = "";
+    document.getElementById("cleanupScanned").textContent = "0";
+    document.getElementById("cleanupMatched").textContent = "0";
+    document.getElementById("cleanupArchived").textContent = "0";
+    document.getElementById("cleanupErrors").textContent = "0";
 
-      for (const child of snap.children) {
-        const post = child.val();
-        const postId = child.key;
-        
-        // Archive if: ended AND not already archived
-        if (post.endedAt && post.endedAt < cutoff && !post.isArchived) {
-          await update(ref(db, `posts/${postId}`), {
-            isArchived: true,
-            archivedAt: now
-          });
-          archived++;
+    const days = parseInt(document.getElementById("archiveDays").value, 10);
+    const limit = parseInt(document.getElementById("archiveLimit").value, 10);
+    const mode = document.getElementById("archiveMode").value;
+    const onlyNotArchived = document.getElementById("onlyNotArchived").checked;
+    const requireEndedAt = document.getElementById("requireEndedAt").checked;
+
+    const nowSeconds = nowSec();
+    const cutoff = nowSeconds - (days * 86400);
+
+    log(`🚀 Running cleanup: mode=${mode}, days=${days}, cutoff=${cutoff}, limit=${limit}`);
+    log(`Flags: onlyNotArchived=${onlyNotArchived}, requireEndedAt=${requireEndedAt}`);
+
+    let scanned = 0, matched = 0, archived = 0, errors = 0;
+
+    try {
+      // Query posts with endedAt <= cutoff
+      const postsRef = ref(db, "posts");
+      const q = query(postsRef, orderByChild("endedAt"), endAt(cutoff), limitToFirst(limit));
+
+      const snap = await get(q);
+      if (!snap.exists()) {
+        log("ℹ️ No posts matched endedAt cutoff");
+        return;
+      }
+
+      const posts = snap.val();
+      const postIds = Object.keys(posts);
+
+      for (const postId of postIds) {
+        if (stopFlag) {
+          log("⏸️ Stopped by user");
+          break;
+        }
+
+        scanned++;
+        document.getElementById("cleanupScanned").textContent = scanned;
+
+        const post = posts[postId];
+        const endedAtVal = post.endedAt;
+        const isArchived = post.isArchived === true;
+
+        // Apply filters
+        if (requireEndedAt && typeof endedAtVal !== "number") continue;
+        if (onlyNotArchived && isArchived) continue;
+
+        // Matched
+        matched++;
+        document.getElementById("cleanupMatched").textContent = matched;
+
+        // Add to results table
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td style="font-family: monospace;">${escapeHtml(postId)}</td>
+          <td>${endedAtVal || ""}</td>
+          <td>${isArchived ? "true" : ""}</td>
+          <td>${escapeHtml(post.type || "")}</td>
+          <td>${escapeHtml(post.title || "")}</td>
+        `;
+        document.getElementById("cleanupResults").appendChild(tr);
+
+        // Execute archive if mode = archive
+        if (mode === "archive") {
+          try {
+            await update(ref(db, `posts/${postId}`), {
+              isArchived: true,
+              archivedAt: nowSeconds
+            });
+            archived++;
+            document.getElementById("cleanupArchived").textContent = archived;
+          } catch (e) {
+            errors++;
+            document.getElementById("cleanupErrors").textContent = errors;
+            log(`❌ Archive failed for ${postId}: ${e.message}`);
+          }
         }
       }
 
-      confirmArchive.value = "";
-      log(`✅ Archived ${archived} posts`);
-      loadStats(); // Refresh stats
+      log(`✅ Cleanup complete: scanned=${scanned}, matched=${matched}, archived=${archived}, errors=${errors}`);
+      if (mode === "preview") {
+        log("ℹ️ Preview mode - no writes performed. Switch to 'Archive' mode to execute.");
+      }
+      
+      // Refresh stats after cleanup
+      if (mode === "archive" && archived > 0) {
+        loadStats();
+      }
     } catch (e) {
-      log("❌ Archive failed", e);
+      log("❌ Cleanup error", e);
     }
   };
+
+  function escapeHtml(s) {
+    return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+  }
 
   /* ================= Hard Delete Archived Posts ================= */
   window.previewDelete = async () => {
@@ -387,7 +513,6 @@
         const post = child.val();
         const postId = child.key;
         
-        // Only delete if: archived AND archivedAt older than cutoff
         if (post.isArchived && post.archivedAt && post.archivedAt < cutoff) {
           candidates.push({
             id: postId,
@@ -428,17 +553,15 @@
         const post = child.val();
         const postId = child.key;
         
-        // Delete if: archived AND archivedAt older than cutoff
         if (post.isArchived && post.archivedAt && post.archivedAt < cutoff) {
           await remove(ref(db, `posts/${postId}`));
-          // TODO: Also delete from user-posts, comments, etc.
           deleted++;
         }
       }
 
       confirmDelete.value = "";
       log(`✅ Permanently deleted ${deleted} archived posts`);
-      loadStats(); // Refresh stats
+      loadStats();
     } catch (e) {
       log("❌ Hard delete failed", e);
     }
